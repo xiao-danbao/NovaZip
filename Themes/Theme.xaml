@@ -352,7 +352,7 @@
 
     <!-- ============ ScrollBar ============ -->
     <Style x:Key="ThinScrollBar" TargetType="ScrollBar">
-        <Setter Property="Width" Value="8" />
+        <Setter Property="Width" Value="10" />
         <Setter Property="Height" Value="Auto" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Template">
@@ -361,33 +361,21 @@
                     <Grid Background="Transparent">
                         <Track x:Name="PART_Track" IsDirectionReversed="True">
                             <Track.Thumb>
-                                <Thumb MinHeight="26" MinWidth="26" Cursor="Arrow">
+                                <Thumb MinHeight="28" MinWidth="28" Cursor="Arrow">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <!-- 细条圆角：默认略窄略淡，悬停/拖动时平滑加宽加深 -->
+                                            <!-- 悬浮细条：6px 灰色圆头，无轨道底色，悬停加深 -->
                                             <Border Background="Transparent" Padding="2">
-                                                <Border x:Name="Bar" CornerRadius="2" Opacity="0.72"
-                                                        Background="{DynamicResource ScrollThumbBrush}"
-                                                        RenderTransformOrigin="0.5,0.5">
-                                                    <Border.RenderTransform>
-                                                        <ScaleTransform x:Name="BarScale" ScaleX="0.75" ScaleY="1" />
-                                                    </Border.RenderTransform>
-                                                </Border>
+                                                <Border x:Name="Bar" CornerRadius="3" Opacity="0.55"
+                                                        Background="{DynamicResource ScrollThumbBrush}" />
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
                                                     <Trigger.EnterActions>
                                                         <BeginStoryboard>
                                                             <Storyboard>
-                                                                <DoubleAnimation Storyboard.TargetName="BarScale"
-                                                                                 Storyboard.TargetProperty="ScaleX" To="1"
-                                                                                 Duration="0:0:0.12">
-                                                                    <DoubleAnimation.EasingFunction>
-                                                                        <CubicEase EasingMode="EaseOut" />
-                                                                    </DoubleAnimation.EasingFunction>
-                                                                </DoubleAnimation>
                                                                 <DoubleAnimation Storyboard.TargetName="Bar"
-                                                                                 Storyboard.TargetProperty="Opacity" To="1"
+                                                                                 Storyboard.TargetProperty="Opacity" To="0.95"
                                                                                  Duration="0:0:0.12" />
                                                             </Storyboard>
                                                         </BeginStoryboard>
@@ -395,15 +383,8 @@
                                                     <Trigger.ExitActions>
                                                         <BeginStoryboard>
                                                             <Storyboard>
-                                                                <DoubleAnimation Storyboard.TargetName="BarScale"
-                                                                                 Storyboard.TargetProperty="ScaleX" To="0.75"
-                                                                                 Duration="0:0:0.18">
-                                                                    <DoubleAnimation.EasingFunction>
-                                                                        <CubicEase EasingMode="EaseOut" />
-                                                                    </DoubleAnimation.EasingFunction>
-                                                                </DoubleAnimation>
                                                                 <DoubleAnimation Storyboard.TargetName="Bar"
-                                                                                 Storyboard.TargetProperty="Opacity" To="0.72"
+                                                                                 Storyboard.TargetProperty="Opacity" To="0.55"
                                                                                  Duration="0:0:0.18" />
                                                             </Storyboard>
                                                         </BeginStoryboard>
@@ -449,6 +430,105 @@
     </Style>
 
     <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}" />
+
+    <!-- 悬浮式细滚动条：无轨道底色，圆头滑块，两侧留白 -->
+    <Style x:Key="OverlayScrollBar" TargetType="ScrollBar">
+        <Setter Property="Width" Value="12" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="Transparent">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.Thumb>
+                                <Thumb MinHeight="40" MinWidth="12" Cursor="Arrow">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Grid Background="Transparent">
+                                                <Border x:Name="Bar" Width="6" CornerRadius="3" Opacity="0.55"
+                                                        HorizontalAlignment="Center"
+                                                        Background="{DynamicResource ScrollThumbBrush}" />
+                                            </Grid>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation Storyboard.TargetName="Bar"
+                                                                                 Storyboard.TargetProperty="Opacity" To="0.9"
+                                                                                 Duration="0:0:0.12" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                    <Trigger.ExitActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation Storyboard.TargetName="Bar"
+                                                                                 Storyboard.TargetProperty="Opacity" To="0.55"
+                                                                                 Duration="0:0:0.18" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.ExitActions>
+                                                </Trigger>
+                                                <Trigger Property="IsDragging" Value="True">
+                                                    <Setter TargetName="Bar" Property="Opacity" Value="1" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageDownCommand" IsTabStop="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Background="Transparent" />
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.IncreaseRepeatButton>
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageUpCommand" IsTabStop="False">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Background="Transparent" />
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.DecreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 滚动条浮在内容之上（不占内容宽度），上下留白避开圆角 -->
+    <Style x:Key="OverlayScrollViewer" TargetType="ScrollViewer">
+        <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollViewer">
+                    <Grid Background="Transparent">
+                        <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
+                                                Margin="{TemplateBinding Padding}"
+                                                Content="{TemplateBinding Content}"
+                                                ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                CanContentScroll="{TemplateBinding CanContentScroll}" />
+                        <ScrollBar x:Name="PART_VerticalScrollBar" Style="{StaticResource OverlayScrollBar}"
+                                   Orientation="Vertical" Width="12"
+                                   HorizontalAlignment="Right" VerticalAlignment="Stretch" Margin="0,5,0,5"
+                                   Minimum="0"
+                                   Maximum="{TemplateBinding ScrollableHeight}"
+                                   ViewportSize="{TemplateBinding ViewportHeight}"
+                                   Value="{TemplateBinding VerticalOffset}"
+                                   Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
 
     <!-- ============ ListBox / items ============ -->
     <Style x:Key="EntryListBox" TargetType="ListBox">

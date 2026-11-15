@@ -7,7 +7,7 @@
 - 基于 7-Zip 26.06 原生内核（`runtime\7z.exe` / `7z.dll`），兼容 7z、zip、rar、tar、gz 等常见压缩格式
 - WPF 现代化界面，支持浅色 / 深色主题与亚克力（Acrylic）材质
 - 快速解压窗口（Quick Extract）与后台任务队列、进度回调
-- 全局滚轮平滑滚动，细条滚动条悬停 / 拖动时平滑加宽加深
+- 全局滚轮平滑滚动，悬浮叠加式细滚动条（不占用内容宽度），悬停 / 拖动时加深高亮
 - 归档内文件查看、解压与压缩流程封装（`Engine` / `ArchiveEditor`）
 - 资源管理器右键菜单集成（`ContextMenuIntegration`）
 - 内置 GitHub Releases 更新检查：下载安装包后按 SHA-256 校验，退出后覆盖重启

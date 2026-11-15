@@ -17,6 +17,8 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <!-- 显式指定窗口级滚动条样式：细条圆角悬浮滑块 -->
+        <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}" />
     </Window.Resources>
 
     <Grid x:Name="RootGrid" ClipToBounds="True">
@@ -209,7 +211,7 @@
                         </StackPanel>
                     </Border>
 
-                    <TextBlock Grid.Row="2" Text="NovaZip 1.4.1 · 现代化归档工具" FontSize="10.5"
+                    <TextBlock Grid.Row="2" Text="NovaZip 1.4.4 · 现代化归档工具" FontSize="10.5"
                                Foreground="{DynamicResource TextFaintBrush}" Margin="10,0,0,8" />
                     </Grid>
                 </Border>
@@ -1038,9 +1040,9 @@
                 <Border.RenderTransform>
                     <TranslateTransform x:Name="SettingsSlide" X="26" />
                 </Border.RenderTransform>
-                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
-                              MaxHeight="700" Padding="0,0,4,0">
-                <StackPanel Margin="22,20,14,18">
+                <ScrollViewer Style="{StaticResource OverlayScrollViewer}"
+                              Margin="0,10,3,10" MaxHeight="700">
+                <StackPanel Margin="22,8,16,6">
                     <TextBlock Text="设置" FontSize="16" FontWeight="SemiBold" />
                     <TextBlock Text="外观、集成与解压行为" FontSize="11" Foreground="{DynamicResource TextFaintBrush}"
                                Margin="0,4,0,0" />
@@ -1193,7 +1195,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,16,0">
-                            <TextBlock x:Name="UpdateStatusText" Text="当前版本 1.4.1" FontSize="13" TextWrapping="Wrap" />
+                            <TextBlock x:Name="UpdateStatusText" Text="当前版本 1.4.4" FontSize="13" TextWrapping="Wrap" />
                             <TextBlock x:Name="UpdateHintText" Text="从 GitHub Releases 下载，校验后自动重启安装"
                                        FontSize="10.5" Foreground="{DynamicResource TextFaintBrush}"
                                        TextWrapping="Wrap" Margin="0,3,0,0" />
@@ -1209,7 +1211,7 @@
                                  Background="{DynamicResource SegmentTrackBrush}" />
 
                     <Border Height="1" Background="{DynamicResource DividerBrush}" Margin="0,18,0,12" />
-                    <TextBlock x:Name="AboutText" Text="NovaZip 1.4.1 · 7-Zip 26.06 内核" FontSize="10.5"
+                    <TextBlock x:Name="AboutText" Text="NovaZip 1.4.4 · 7-Zip 26.06 内核" FontSize="10.5"
                                Foreground="{DynamicResource TextFaintBrush}" />
                     <TextBlock Text="所有设置即时生效，无需重启" FontSize="10.5"
                                Foreground="{DynamicResource TextFaintBrush}" Margin="0,3,0,0" />

@@ -89,7 +89,7 @@
     <SolidColorBrush x:Key="NavHoverBrush" Color="#0F0F172A" />
     <SolidColorBrush x:Key="NavHoverForegroundBrush" Color="#FF1F2B3D" />
     <SolidColorBrush x:Key="NavActiveBrush" Color="#FFE8F2FC" />
-    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#FFC3CEDF" />
+    <SolidColorBrush x:Key="ScrollThumbBrush" Color="#FF7C8288" />
     <SolidColorBrush x:Key="TrackBrush" Color="#FFE4EAF3" />
     <SolidColorBrush x:Key="DropZoneBrush" Color="#BFFFFFFF" />
     <SolidColorBrush x:Key="DropZoneBorderBrush" Color="#FFC9D6E8" />
