@@ -1,0 +1,15 @@
+bin/
+obj/
+.vs/
+*.user
+dist/
+
+# Build output
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+*.pdb
+
+# Rider / VS Code
+.idea/
+.vscode/
