@@ -30,7 +30,7 @@ namespace NovaZip
     /// </summary>
     internal static class UpdateService
     {
-        // 本软件的 GitHub 仓库（所有者 / 仓库名），用于检查 Releases 更新。
+        // 更新源仓库：Releases 需上传 NovaZip-<版本>-win-x64.exe 与同名 .sha256
         private const string RepoOwner = "xiao-danbao";
         private const string RepoName = "NovaZip";
 

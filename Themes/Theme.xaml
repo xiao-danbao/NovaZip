@@ -353,6 +353,7 @@
     <!-- ============ ScrollBar ============ -->
     <Style x:Key="ThinScrollBar" TargetType="ScrollBar">
         <Setter Property="Width" Value="8" />
+        <Setter Property="Height" Value="Auto" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Template">
             <Setter.Value>
@@ -360,10 +361,58 @@
                     <Grid Background="Transparent">
                         <Track x:Name="PART_Track" IsDirectionReversed="True">
                             <Track.Thumb>
-                                <Thumb>
+                                <Thumb MinHeight="26" MinWidth="26" Cursor="Arrow">
                                     <Thumb.Template>
                                         <ControlTemplate TargetType="Thumb">
-                                            <Border CornerRadius="3" Background="{DynamicResource ScrollThumbBrush}" Margin="1,0" />
+                                            <!-- 细条圆角：默认略窄略淡，悬停/拖动时平滑加宽加深 -->
+                                            <Border Background="Transparent" Padding="2">
+                                                <Border x:Name="Bar" CornerRadius="2" Opacity="0.72"
+                                                        Background="{DynamicResource ScrollThumbBrush}"
+                                                        RenderTransformOrigin="0.5,0.5">
+                                                    <Border.RenderTransform>
+                                                        <ScaleTransform x:Name="BarScale" ScaleX="0.75" ScaleY="1" />
+                                                    </Border.RenderTransform>
+                                                </Border>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Trigger.EnterActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation Storyboard.TargetName="BarScale"
+                                                                                 Storyboard.TargetProperty="ScaleX" To="1"
+                                                                                 Duration="0:0:0.12">
+                                                                    <DoubleAnimation.EasingFunction>
+                                                                        <CubicEase EasingMode="EaseOut" />
+                                                                    </DoubleAnimation.EasingFunction>
+                                                                </DoubleAnimation>
+                                                                <DoubleAnimation Storyboard.TargetName="Bar"
+                                                                                 Storyboard.TargetProperty="Opacity" To="1"
+                                                                                 Duration="0:0:0.12" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.EnterActions>
+                                                    <Trigger.ExitActions>
+                                                        <BeginStoryboard>
+                                                            <Storyboard>
+                                                                <DoubleAnimation Storyboard.TargetName="BarScale"
+                                                                                 Storyboard.TargetProperty="ScaleX" To="0.75"
+                                                                                 Duration="0:0:0.18">
+                                                                    <DoubleAnimation.EasingFunction>
+                                                                        <CubicEase EasingMode="EaseOut" />
+                                                                    </DoubleAnimation.EasingFunction>
+                                                                </DoubleAnimation>
+                                                                <DoubleAnimation Storyboard.TargetName="Bar"
+                                                                                 Storyboard.TargetProperty="Opacity" To="0.72"
+                                                                                 Duration="0:0:0.18" />
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </Trigger.ExitActions>
+                                                </Trigger>
+                                                <Trigger Property="IsDragging" Value="True">
+                                                    <Setter TargetName="Bar" Property="Opacity" Value="1" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
                                         </ControlTemplate>
                                     </Thumb.Template>
                                 </Thumb>
@@ -391,6 +440,12 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="Height" Value="8" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="ScrollBar" BasedOn="{StaticResource ThinScrollBar}" />
@@ -402,6 +457,8 @@
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
         <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
         <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+        <!-- 像素滚动：滚轮按像素平滑推进，同时保留虚拟化 -->
+        <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
         <Setter Property="ItemContainerStyle">
             <Setter.Value>
                 <Style TargetType="ListBoxItem">

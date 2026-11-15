@@ -29,6 +29,9 @@ namespace NovaZip
         {
             base.OnStartup(e);
 
+            // 全局滚轮平滑滚动：所有窗口通用
+            SmoothScroller.Attach();
+
             if (e.Args.Any(a => string.Equals(a, "--selftest", StringComparison.OrdinalIgnoreCase)))
             {
                 var code = SelfTest.Run(Path.Combine(AppContext.BaseDirectory, "selftest.log"));
