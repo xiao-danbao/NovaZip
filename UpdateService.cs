@@ -31,7 +31,7 @@ namespace NovaZip
     internal static class UpdateService
     {
         // 本软件的 GitHub 仓库（所有者 / 仓库名），用于检查 Releases 更新。
-        private const string RepoOwner = "cgh0713";
+        private const string RepoOwner = "xiao-danbao";
         private const string RepoName = "NovaZip";
 
         private static readonly HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };

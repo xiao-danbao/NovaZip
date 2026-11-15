@@ -27,7 +27,7 @@ dotnet publish NovaZip.csproj -c Release -r win-x64 --self-contained true -p:Pub
 
 ## 下载与安装
 
-预编译的 Windows x64 安装包与 SHA-256 校验文件见 [Releases](https://github.com/cgh0713/NovaZip/releases)。
+预编译的 Windows x64 安装包与 SHA-256 校验文件见 [Releases](https://github.com/xiao-danbao/NovaZip/releases)。
 
 ## 目录结构
 
