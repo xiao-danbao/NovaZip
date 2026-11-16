@@ -194,6 +194,9 @@
             <!-- 按钮 -->
             <Grid Grid.Row="2" Margin="0,14,0,0">
                 <StackPanel x:Name="BusyButtons" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="PauseQuickButton" Style="{StaticResource GhostButton}" Content="暂停" Padding="15,7"
+                            FontSize="12" Click="PauseQuick_Click" Margin="0,0,8,0" Visibility="Collapsed"
+                            ToolTip="暂停解压，可随时继续" AutomationProperties.AutomationId="QuickPause" />
                     <Button Style="{StaticResource GhostButton}" Content="取消" Padding="15,7" FontSize="12"
                             Click="Cancel_Click" AutomationProperties.AutomationId="QuickCancel" />
                 </StackPanel>

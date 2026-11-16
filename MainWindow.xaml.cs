@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -35,6 +35,10 @@ namespace NovaZip
         private ArchiveSession? _session;
         private ProgressState? _progress;
         private CancellationTokenSource? _cts;
+        private readonly ManualResetEventSlim _mainPauseGate = new(true);
+        private bool _paused;
+        private bool _canPause;
+        private string _progressTitle = "";
         private TaskCompletionSource<string?>? _passwordTcs;
         private TaskCompletionSource<string?>? _renameTcs;
         private string? _pendingArchivePath;
@@ -107,6 +111,7 @@ namespace NovaZip
                 ThemeManager.ThemeChanged -= OnThemeChanged;
                 ThemeManager.ModeChanged -= OnThemeModeChanged;
                 TaskQueue.Changed -= OnQueueChanged;
+                TaskQueue.SaveSnapshot();
                 CleanupPreview();
             };
 
@@ -147,7 +152,48 @@ namespace NovaZip
             }
 
             UpdateQueueBadge();
+            ShowRestoreBannerIfAny();
             CheckUpdatesOnStartup();
+        }
+
+        /// <summary>启动时检查上次未完成的解压任务（队列快照 + 全部断点记录）并弹出恢复提示。</summary>
+        private void ShowRestoreBannerIfAny()
+        {
+            try
+            {
+                var pending = ExtractCoordinator.LoadQueueSnapshot();
+                pending.AddRange(ExtractCoordinator.LoadInterruptedRecords()
+                    .Select(r => r.Archive));
+                pending = pending.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                if (pending.Count == 0) return;
+
+                RestoreTitleText.Text = "检测到未完成的解压任务";
+                RestoreDetailText.Text = pending.Count == 1
+                    ? "「" + Path.GetFileName(pending[0]) + "」上次中断，可从断点继续"
+                    : "共 " + pending.Count + " 个任务未完成，可从断点继续";
+                RestoreBanner.Tag = pending;
+                RestoreBanner.Visibility = Visibility.Visible;
+            }
+            catch
+            {
+                // 快照损坏时静默跳过
+            }
+        }
+
+        private void RestoreContinue_Click(object sender, RoutedEventArgs e)
+        {
+            RestoreBanner.Visibility = Visibility.Collapsed;
+            if (RestoreBanner.Tag is List<string> pending)
+            {
+                TaskQueue.Enqueue(pending);
+                ShowToast("已恢复 " + pending.Count + " 个任务 · 将从断点继续", ToastKind.Success);
+                OpenQueuePanel();
+            }
+        }
+
+        private void RestoreDismiss_Click(object sender, RoutedEventArgs e)
+        {
+            RestoreBanner.Visibility = Visibility.Collapsed;
         }
 
         private void PlayEntranceAnimation()
@@ -738,10 +784,15 @@ namespace NovaZip
             if (_session == null) return;
             if (PasswordOverlay.Visibility == Visibility.Visible) return;
 
+            // 自动解压到同名文件夹时接入断点续传：中断后再次解压自动从上次进度继续
+            ExtractCoordinator? coordinator = autoFolder
+                ? ExtractCoordinator.Create(_session.FilePath)
+                : null;
+
             string target;
             if (autoFolder)
             {
-                target = BuildExtractFolder(_session.FilePath);
+                target = coordinator?.RecordTarget ?? BuildExtractFolder(_session.FilePath);
             }
             else
             {
@@ -760,8 +811,21 @@ namespace NovaZip
                 ? session.Entries.Where(x => !x.IsDir).Count()
                 : indices.Count(i => i < session.Entries.Count && !session.Entries[(int)i].IsDir);
 
-            var result = await RunOperationAsync("正在解压 " + total + " 个文件…",
-                (progress, token) => SevenZipEngine.Extract(session, indices, target, progress, token));
+            OperationResult? result;
+            if (coordinator != null)
+            {
+                coordinator.Initialize(target, session.Entries);
+                // 主界面没有磁盘分批入口，关闭磁盘分批；中断后可再次解压从断点续传
+                result = await RunOperationAsync("正在解压 " + total + " 个文件…",
+                    (progress, token) => coordinator.Run(session, progress, token, _mainPauseGate, diskBatching: false),
+                    canPause: true);
+            }
+            else
+            {
+                result = await RunOperationAsync("正在解压 " + total + " 个文件…",
+                    (progress, token) => SevenZipEngine.Extract(session, indices, target, progress, token, _mainPauseGate),
+                    canPause: true);
+            }
 
             if (result == null) return;
 
@@ -771,8 +835,18 @@ namespace NovaZip
                 if (pwd != null)
                 {
                     session.Password = pwd;
-                    result = await RunOperationAsync("正在解压 " + total + " 个文件…",
-                        (progress, token) => SevenZipEngine.Extract(session, indices, target, progress, token));
+                    if (coordinator != null)
+                    {
+                        result = await RunOperationAsync("正在解压 " + total + " 个文件…",
+                            (progress, token) => coordinator.Run(session, progress, token, _mainPauseGate, diskBatching: false),
+                            canPause: true);
+                    }
+                    else
+                    {
+                        result = await RunOperationAsync("正在解压 " + total + " 个文件…",
+                            (progress, token) => SevenZipEngine.Extract(session, indices, target, progress, token, _mainPauseGate),
+                            canPause: true);
+                    }
                 }
             }
 
@@ -793,7 +867,9 @@ namespace NovaZip
             }
             else if (result.Cancelled)
             {
-                ShowToast("解压已取消", ToastKind.Info);
+                ShowToast(coordinator?.HasRecord == true
+                    ? "解压已中断 · 再次解压可从断点继续"
+                    : "解压已取消", ToastKind.Info);
             }
             else
             {
@@ -2259,6 +2335,24 @@ namespace NovaZip
             TaskQueue.CancelCurrent();
         }
 
+        private void QueueItemResume_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button { Tag: QueueItem item } && item.CanResume)
+                TaskQueue.ResumeItem(item);
+        }
+
+        private void QueueCleanup_Click(object sender, RoutedEventArgs e)
+        {
+            if (TaskQueue.ActiveCount > 0)
+            {
+                ShowToast("有任务正在运行，完成后再清理断点", ToastKind.Info);
+                return;
+            }
+
+            TaskQueue.CleanupProgressData();
+            ShowToast("已清理全部断点数据", ToastKind.Success);
+        }
+
         private void QueuePause_Click(object sender, RoutedEventArgs e)
         {
             if (TaskQueue.IsPaused) TaskQueue.Resume();
@@ -2285,6 +2379,12 @@ namespace NovaZip
             ProgressBytesText.Text = "";
             ProgressSpeedText.Text = "";
             ProgressRing.Value = 0;
+
+            _progressTitle = title;
+            _paused = false;
+            _mainPauseGate.Set();
+            PauseResumeText.Text = "暂停";
+            PauseResumeButton.Visibility = _canPause ? Visibility.Visible : Visibility.Collapsed;
 
             _lastCompleted = 0;
             _smoothedSpeed = 0;
@@ -2343,12 +2443,13 @@ namespace NovaZip
         }
 
         private async Task<OperationResult?> RunOperationAsync(string title,
-            Func<ProgressState, CancellationToken, OperationResult> action)
+            Func<ProgressState, CancellationToken, OperationResult> action, bool canPause = false)
         {
             if (_cts != null) return null;
 
             _cts = new CancellationTokenSource();
             _progress = new ProgressState();
+            _canPause = canPause;
             ShowProgress(title);
 
             try
@@ -2372,6 +2473,9 @@ namespace NovaZip
             finally
             {
                 HideProgress();
+                _mainPauseGate.Set();
+                _paused = false;
+                _canPause = false;
                 _cts.Dispose();
                 _cts = null;
                 _progress = null;
@@ -2379,6 +2483,27 @@ namespace NovaZip
         }
 
         private void CancelOperation_Click(object sender, RoutedEventArgs e) => _cts?.Cancel();
+
+        private void PauseOperation_Click(object sender, RoutedEventArgs e)
+        {
+            if (_cts == null || !_canPause) return;
+
+            if (_paused)
+            {
+                _paused = false;
+                _mainPauseGate.Set();
+                PauseResumeText.Text = "暂停";
+                ProgressTitle.Text = _progressTitle;
+            }
+            else
+            {
+                _paused = true;
+                _mainPauseGate.Reset();
+                PauseResumeText.Text = "继续";
+                ProgressTitle.Text = "已暂停";
+                ProgressSpeedText.Text = "";
+            }
+        }
 
         // ==================== Password ====================
 

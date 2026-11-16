@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -37,11 +39,23 @@ namespace NovaZip
 
         private ProgressState? _progress;
         private CancellationTokenSource? _cts;
+        private readonly ManualResetEventSlim _pauseGate = new(true);
+        private bool _paused;
+        private Process? _compressProcess;
+        private bool _compressSuspended;
         private string _target = "";
         private long _lastCompleted;
         private double _lastSpeedTime;
         private double _smoothedSpeed;
         private double _percent;
+
+        /// <summary>挂起/恢复 7z.exe 子进程（压缩走外部进程，无法通过内核回调暂停）。</summary>
+        [DllImport("ntdll.dll")]
+        private static extern uint NtSuspendProcess(IntPtr processHandle);
+
+        [DllImport("ntdll.dll")]
+        private static extern uint NtResumeProcess(IntPtr processHandle);
+
         private bool _closing;
 
         public QuickExtractWindow(string archivePath, QuickExtractMode mode = QuickExtractMode.Folder)
@@ -189,7 +203,7 @@ namespace NovaZip
                     }
 
                     using var session = SevenZipEngine.Open(_archivePath, password);
-                    var item = SevenZipEngine.Extract(session, null, _target, _progress!, token);
+                    var item = SevenZipEngine.Extract(session, null, _target, _progress!, token, _pauseGate);
 
                     if (item.Success)
                     {
@@ -213,6 +227,14 @@ namespace NovaZip
             finally
             {
                 _timer.Stop();
+                _pauseGate.Set();
+                _paused = false;
+                if (_compressSuspended)
+                {
+                    try { NtResumeProcess(_compressProcess!.Handle); } catch { /* 进程可能已退出 */ }
+                    _compressSuspended = false;
+                }
+                _compressProcess = null;
                 _cts?.Dispose();
                 _cts = null;
                 _progress = null;
@@ -264,7 +286,7 @@ namespace NovaZip
                     _target = BuildOutputPath(_sources[0]);
                     // 与主界面一致：优先 7z.exe 子进程（海量小文件快数倍），无法映射路径时回退内核
                     var created = CompressProcess.TryCompress(items, _target, "", 5, AppSettings.ExcludeJunk,
-                                      _progress!, token)
+                                      _progress!, token, p => _compressProcess = p)
                                   ?? SevenZipEngine.Create(items, _target, "", 5, _progress!, token);
                     if (!created.Success && File.Exists(_target)) TryDelete(_target);
                     return created;
@@ -277,6 +299,14 @@ namespace NovaZip
             finally
             {
                 _timer.Stop();
+                _pauseGate.Set();
+                _paused = false;
+                if (_compressSuspended)
+                {
+                    try { NtResumeProcess(_compressProcess!.Handle); } catch { /* 进程可能已退出 */ }
+                    _compressSuspended = false;
+                }
+                _compressProcess = null;
                 _cts?.Dispose();
                 _cts = null;
                 _progress = null;
@@ -390,6 +420,13 @@ namespace NovaZip
             PasswordPanel.Visibility = Visibility.Collapsed;
             PasswordButtons.Visibility = Visibility.Collapsed;
 
+            // 解压走引擎回调原位暂停；压缩挂起 7z.exe 子进程
+            _paused = false;
+            _pauseGate.Set();
+            _compressSuspended = false;
+            PauseQuickButton.Content = "暂停";
+            PauseQuickButton.Visibility = Visibility.Visible;
+
             // 上一轮收尾可能给进度条挂了补满动画，重新开始时先清掉，确保从 0 起步
             Bar.BeginAnimation(ProgressBar.ValueProperty, null);
             Bar.Value = 0;
@@ -456,6 +493,48 @@ namespace NovaZip
         {
             _cts?.Cancel();
             StatusTitle.Text = "正在取消…";
+        }
+
+        private void PauseQuick_Click(object sender, RoutedEventArgs e)
+        {
+            if (_cts == null) return;
+
+            if (_paused)
+            {
+                _paused = false;
+                if (_isCompress)
+                {
+                    if (_compressProcess != null && _compressSuspended)
+                    {
+                        try { NtResumeProcess(_compressProcess.Handle); } catch { /* 进程可能已退出 */ }
+                    }
+                    _compressSuspended = false;
+                }
+                else
+                {
+                    _pauseGate.Set();
+                }
+                PauseQuickButton.Content = "暂停";
+                StatusTitle.Text = BusyTitle;
+            }
+            else
+            {
+                _paused = true;
+                if (_isCompress)
+                {
+                    if (_compressProcess != null && !_compressProcess.HasExited)
+                    {
+                        try { NtSuspendProcess(_compressProcess.Handle); _compressSuspended = true; }
+                        catch { /* 进程可能刚好退出 */ }
+                    }
+                }
+                else
+                {
+                    _pauseGate.Reset();
+                }
+                PauseQuickButton.Content = "继续";
+                StatusTitle.Text = "已暂停";
+            }
         }
 
         private void CancelClose_Click(object sender, RoutedEventArgs e)

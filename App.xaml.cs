@@ -39,6 +39,14 @@ namespace NovaZip
                 return;
             }
 
+            // 无界面验证断点续传链路：NovaZip.exe --resumetest
+            if (e.Args.Any(a => string.Equals(a, "--resumetest", StringComparison.OrdinalIgnoreCase)))
+            {
+                var code = ResumeTest.Run(Path.Combine(AppContext.BaseDirectory, "resumetest.log"));
+                Shutdown(code);
+                return;
+            }
+
             // 无界面性能基准：--bench <压缩包> 或 --bench-create <输出包> <源...>，可加 --bench-out <日志>
             var benchOutIndex = OptionIndex(e.Args, "--bench-out");
             var benchOut = benchOutIndex >= 0 && benchOutIndex + 1 < e.Args.Length

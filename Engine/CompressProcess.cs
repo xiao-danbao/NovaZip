@@ -21,7 +21,8 @@ namespace NovaZip.Engine
         /// 尝试用 7z.exe 压缩。源路径无法安全映射成压缩包内路径时返回 null，由调用方回退到内核实现。
         /// </summary>
         public static OperationResult? TryCompress(IReadOnlyList<SevenZipEngine.SourceItem> sources, string outputPath,
-            string password, int level, bool excludeJunk, ProgressState progress, CancellationToken token)
+            string password, int level, bool excludeJunk, ProgressState progress, CancellationToken token,
+            Action<Process>? onProcessStarted = null)
         {
             var exe = ArchiveEditor.Find7z();
             if (exe == null) return null;
@@ -105,6 +106,7 @@ namespace NovaZip.Engine
                     result.Message = "无法启动 7z.exe。";
                     return result;
                 }
+                onProcessStarted?.Invoke(process);
 
                 var childWatch = Stopwatch.StartNew();
 

@@ -66,6 +66,12 @@ namespace NovaZip.Engine
         public int ItemCount;
         public int LastResult;
         public volatile bool Cancelled;
+
+        /// <summary>断点续传：已完成批次（含大文件已写偏移）的累计字节，由协调器设置。</summary>
+        public long BaseCompleted;
+
+        /// <summary>大于 0 时 SetTotal 不覆盖 Total，保证跨批次进度条总量稳定。</summary>
+        public long FixedTotal;
     }
 
     public sealed class OperationResult
@@ -418,7 +424,8 @@ namespace NovaZip.Engine
         }
 
         public static OperationResult Extract(ArchiveSession session, IReadOnlyList<uint>? indices, string targetDir,
-            ProgressState progress, CancellationToken token, ManualResetEventSlim? pauseGate = null)
+            ProgressState progress, CancellationToken token, ManualResetEventSlim? pauseGate = null,
+            ExtractHooks? hooks = null)
         {
             var result = new OperationResult();
             Directory.CreateDirectory(targetDir);
@@ -444,7 +451,7 @@ namespace NovaZip.Engine
                 progress.Total = total;
             }
 
-            var callback = new ArchiveExtractCallback(session, targetDir, progress, token, false, pauseGate);
+            var callback = new ArchiveExtractCallback(session, targetDir, progress, token, false, pauseGate, hooks);
             uint numItems = 0xFFFFFFFF;
             IntPtr indicesPtr = IntPtr.Zero;
 
@@ -958,19 +965,50 @@ namespace NovaZip.Engine
     {
         private readonly FileStream _stream;
         private bool _closed;
+        private long _skip;
+        private readonly DiskBudget? _budget;
+        private readonly Action? _onBudgetExhausted;
 
         public FileOutStream(string path) : this(path, 1 << 16)
         {
         }
 
         /// <summary>按文件大小选择缓冲区：大文件用 1 关闭缓冲，小文件用 16KB 合并零碎写。</summary>
-        public FileOutStream(string path, int bufferSize)
+        public FileOutStream(string path, int bufferSize) : this(path, bufferSize, 0)
         {
+        }
+
+        /// <summary>
+        /// 断点续写构造：resumeOffset 大于 0 时从已有 .part 文件的指定偏移继续追加，
+        /// 之前的字节由解码器重新生成但在 Write 中丢弃（_skip），保证最终内容完整。
+        /// </summary>
+        public FileOutStream(string path, int bufferSize, long resumeOffset,
+            DiskBudget? budget = null, Action? onBudgetExhausted = null)
+        {
+            _budget = budget;
+            _onBudgetExhausted = onBudgetExhausted;
+            _skip = Math.Max(0, resumeOffset);
+
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            _stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize,
-                FileOptions.SequentialScan);
+
+            var append = resumeOffset > 0 && File.Exists(path);
+            _stream = new FileStream(path, append ? FileMode.Open : FileMode.Create, FileAccess.Write,
+                FileShare.None, bufferSize, FileOptions.SequentialScan);
+
+            if (append)
+            {
+                // .part 比记录偏移长时截断到记录位置；短于时由协调器在规划阶段拦截
+                if (_stream.Length > resumeOffset) _stream.SetLength(resumeOffset);
+                _stream.Seek(resumeOffset, SeekOrigin.Begin);
+            }
         }
+
+        /// <summary>解码器重新生成但需要丢弃的续写前缀字节数（诊断用）。</summary>
+        public long SkipRemaining => _skip;
+
+        /// <summary>预算耗尽被中止时置位，供回调区分取消与磁盘分批暂停。</summary>
+        public bool BudgetStopped { get; private set; }
 
         /// <summary>直接从内核的非托管缓冲区写入文件，省去一次中转拷贝。</summary>
         public unsafe int Write(IntPtr data, uint size, IntPtr processedSize)
@@ -979,6 +1017,29 @@ namespace NovaZip.Engine
             {
                 var length = (int)size;
                 var span = new ReadOnlySpan<byte>((void*)data, length);
+
+                // 续写时丢弃已落盘的前缀字节，这部分由解码器重算但不再写盘
+                if (_skip > 0)
+                {
+                    if (length <= _skip)
+                    {
+                        _skip -= length;
+                        if (processedSize != IntPtr.Zero) Marshal.WriteInt32(processedSize, length);
+                        return Native.S_OK;
+                    }
+
+                    span = span.Slice((int)_skip);
+                    length = span.Length;
+                    _skip = 0;
+                }
+
+                if (_budget != null && _budget.Remaining <= 0)
+                {
+                    BudgetStopped = true;
+                    _onBudgetExhausted?.Invoke();
+                    if (processedSize != IntPtr.Zero) Marshal.WriteInt32(processedSize, 0);
+                    return Native.E_ABORT;
+                }
 
                 // 基准测试时统计写盘耗时，正常使用时只多一次静态字段判断
                 if (EngineTiming.Enabled)
@@ -993,6 +1054,8 @@ namespace NovaZip.Engine
                 {
                     _stream.Write(span);
                 }
+
+                _budget?.TryConsume(length);
 
                 if (processedSize != IntPtr.Zero) Marshal.WriteInt32(processedSize, length);
                 return Native.S_OK;
@@ -1225,6 +1288,7 @@ namespace NovaZip.Engine
         private readonly CancellationToken _token;
         private readonly bool _testMode;
         private readonly ManualResetEventSlim? _pauseGate;
+        private readonly ExtractHooks? _hooks;
         private readonly List<string> _errors = new();
         private readonly HashSet<string> _createdDirs = new(StringComparer.OrdinalIgnoreCase);
         private readonly ParallelFileWriter? _smallWriter;
@@ -1235,6 +1299,9 @@ namespace NovaZip.Engine
         private FileOutStream? _currentStream;
         private MemoryOutStream? _currentBuffer;
         private Exception? _writeError;
+        private bool _entryFailed;
+        private (string PartPath, long Offset)? _resumePlan;
+        private long _resumeEntrySize;
 
         public int Errors => _errors.Count;
         public List<string> ErrorItems => _errors;
@@ -1244,7 +1311,8 @@ namespace NovaZip.Engine
         public bool WrongPassword;
 
         public ArchiveExtractCallback(ArchiveSession session, string? targetDir, ProgressState progress,
-            CancellationToken token, bool testMode, ManualResetEventSlim? pauseGate = null)
+            CancellationToken token, bool testMode, ManualResetEventSlim? pauseGate = null,
+            ExtractHooks? hooks = null)
         {
             _session = session;
             _targetDir = targetDir;
@@ -1252,6 +1320,7 @@ namespace NovaZip.Engine
             _token = token;
             _testMode = testMode;
             _pauseGate = pauseGate;
+            _hooks = hooks;
             _smallWriter = testMode
                 ? null
                 // 建文件受杀毒过滤/目录锁影响，6 个并发已能压满，再多无收益（实测 12 与 6 相同）
@@ -1260,14 +1329,15 @@ namespace NovaZip.Engine
 
         public int SetTotal(ulong total)
         {
-            _progress.Total = (long)total;
+            // 断点续传时由协调器锁定总字节，避免每批重置进度条
+            _progress.Total = _progress.FixedTotal > 0 ? _progress.FixedTotal : (long)total;
             return Native.S_OK;
         }
 
         public int SetCompleted(IntPtr completeValue)
         {
             if (completeValue != IntPtr.Zero)
-                _progress.Completed = Marshal.ReadInt64(completeValue);
+                _progress.Completed = _progress.BaseCompleted + Marshal.ReadInt64(completeValue);
             if (_token.IsCancellationRequested)
             {
                 CancelTriggered = true;
@@ -1292,6 +1362,8 @@ namespace NovaZip.Engine
 
             CloseCurrentStream();
             _currentBuffer = null;
+            _entryFailed = false;
+            _resumePlan = null;
 
             _currentIndex = (int)index;
             _progress.ItemIndex = _currentIndex;
@@ -1312,6 +1384,7 @@ namespace NovaZip.Engine
             {
                 _errors.Add("非法路径：" + entry.Path);
                 _progress.CurrentFile = entry.Path;
+                _hooks?.OnEntryFinished?.Invoke((int)index, "", false);
                 return Native.S_OK;
             }
 
@@ -1322,6 +1395,7 @@ namespace NovaZip.Engine
             {
                 _errors.Add("路径越界：" + entry.Path);
                 _progress.CurrentFile = entry.Path;
+                _hooks?.OnEntryFinished?.Invoke((int)index, "", false);
                 return Native.S_OK;
             }
 
@@ -1347,19 +1421,36 @@ namespace NovaZip.Engine
                 }
                 else
                 {
+                    // 断点续传：协调器对该条目给出 .part 续写计划时走追加模式
+                    var plan = _hooks?.GetResumePlan?.Invoke((int)index) ?? null;
+                    if (plan != null && !string.IsNullOrEmpty(plan.Value.PartPath))
+                    {
+                        _resumePlan = plan;
+                        _resumeEntrySize = (long)entry.Size;
+                        _currentStream = new FileOutStream(plan.Value.PartPath, 1, plan.Value.Offset,
+                            _hooks?.Budget, () => _hooks!.BudgetExhausted = true);
+                        outStream = _currentStream;
+                        return Native.S_OK;
+                    }
+
                     // 大文件直接写盘：实测再叠一层写线程反而抢 CPU，磁盘带宽才是上限
                     if (EngineTiming.Enabled)
                     {
                         var start = Stopwatch.GetTimestamp();
-                        _currentStream = new FileOutStream(fullPath, 1);
+                        _currentStream = new FileOutStream(fullPath, 1, 0, _hooks?.Budget,
+                            () => _hooks!.BudgetExhausted = true);
                         EngineTiming.FileOpenTicks += Stopwatch.GetTimestamp() - start;
                         EngineTiming.FileOpenCalls++;
                     }
                     else
                     {
-                        _currentStream = new FileOutStream(fullPath, 1);
+                        _currentStream = new FileOutStream(fullPath, 1, 0, _hooks?.Budget,
+                            () => _hooks!.BudgetExhausted = true);
                     }
-                    if (entry.Size >= 8UL * 1024 * 1024 && entry.Size <= int.MaxValue)
+
+                    // 续写流不做预分配（会破坏已写内容）；磁盘分批时也跳过预分配，
+                    // 否则预留空间会提前吃光预算导致无法分批
+                    if (_hooks?.Budget == null && entry.Size >= 8UL * 1024 * 1024 && entry.Size <= int.MaxValue)
                         _currentStream.Preallocate((long)entry.Size);
                     outStream = _currentStream;
                 }
@@ -1368,6 +1459,8 @@ namespace NovaZip.Engine
             {
                 _errors.Add(entry.Path + " (" + ex.Message + ")");
                 _currentPath = null;
+                _entryFailed = true;
+                _hooks?.OnEntryFinished?.Invoke((int)index, "", false);
                 return Native.S_OK;
             }
 
@@ -1379,6 +1472,8 @@ namespace NovaZip.Engine
         public int SetOperationResult(int opRes)
         {
             _progress.LastResult = opRes;
+            var budgetPaused = _hooks?.BudgetExhausted == true;
+
             if (opRes != ArchiveResults.Ok)
             {
                 if (opRes == ArchiveResults.WrongPassword) WrongPassword = true;
@@ -1398,9 +1493,21 @@ namespace NovaZip.Engine
             _currentBuffer = null;
             var path = _currentPath;
             var time = _currentTime;
+            var index = _currentIndex;
+            var resumePlan = _resumePlan;
+            _resumePlan = null;
 
             if (path != null && !_testMode)
             {
+                if (resumePlan != null && (ulong)_resumeEntrySize >= SmallFileLimit)
+                {
+                    // 续写流：成功时校验大小并把 .part 改名成最终文件；失败时删掉
+                    // .part 让协调器下轮从头重解。预算中止时保留 .part 等待继续。
+                    HandleResumeStreamResult(index, path, resumePlan.Value, opRes, budgetPaused, time);
+                    _currentPath = null;
+                    return Native.S_OK;
+                }
+
                 if (buffer != null)
                 {
                     if (opRes == ArchiveResults.Ok && _smallWriter != null)
@@ -1438,8 +1545,48 @@ namespace NovaZip.Engine
                 }
             }
 
+            // 通知协调器条目结果：预算中止时不标记失败，保留断点等待继续
+            if (!_entryFailed && !budgetPaused)
+                _hooks?.OnEntryFinished?.Invoke(index, path ?? "", opRes == ArchiveResults.Ok);
+            if (_entryFailed && budgetPaused) _entryFailed = false;
+
             _currentPath = null;
             return Native.S_OK;
+        }
+
+        private void HandleResumeStreamResult(int index, string finalPath,
+            (string PartPath, long Offset) plan, int opRes, bool budgetPaused, DateTime time)
+        {
+            if (opRes != ArchiveResults.Ok)
+            {
+                if (budgetPaused) return; // 磁盘分批中止：保留 .part 续写
+
+                try { if (File.Exists(plan.PartPath)) File.Delete(plan.PartPath); } catch { /* ignore */ }
+                _hooks?.OnEntryFinished?.Invoke(index, finalPath, false);
+                return;
+            }
+
+            try
+            {
+                var length = new FileInfo(plan.PartPath).Length;
+                if (length != _resumeEntrySize)
+                {
+                    // 续写结果不完整（例如前缀损坏）：删掉 .part 交协调器重解
+                    try { File.Delete(plan.PartPath); } catch { /* ignore */ }
+                    _hooks?.OnEntryFinished?.Invoke(index, finalPath, false);
+                    return;
+                }
+
+                if (File.Exists(finalPath)) File.Delete(finalPath);
+                File.Move(plan.PartPath, finalPath);
+                if (time > DateTime.MinValue) ApplyTimestamp(finalPath, time);
+                _hooks?.OnEntryFinished?.Invoke(index, finalPath, true);
+            }
+            catch (Exception ex)
+            {
+                _errors.Add(finalPath + " (" + ex.Message + ")");
+                _hooks?.OnEntryFinished?.Invoke(index, finalPath, false);
+            }
         }
 
         /// <summary>等待后台小文件写入全部完成，用于收尾与错误回传。</summary>
@@ -1447,6 +1594,10 @@ namespace NovaZip.Engine
         {
             _smallWriter?.Dispose();
             if (_writeError == null && _smallWriter?.Error != null) _writeError = _smallWriter.Error;
+
+            // 中止（取消/磁盘分批）时 7z 不会回调 SetOperationResult，
+            // 大文件流残留打开会让下一批的 .part 续写遇到文件占用
+            CloseCurrentStream();
         }
 
         private static void ApplyTimestamp(string path, DateTime time)

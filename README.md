@@ -7,6 +7,10 @@
 - 基于 7-Zip 26.06 原生内核（`runtime\7z.exe` / `7z.dll`），兼容 7z、zip、rar、tar、gz 等常见压缩格式
 - WPF 现代化界面，支持浅色 / 深色主题与亚克力（Acrylic）材质
 - 快速解压窗口（Quick Extract）与后台任务队列、进度回调
+- 断点续传：解压中断后自动保存进度，下次继续时断点续写；校验不通过的文件自动重解
+- 智能分段解压：目标盘空间不足时按可用空间分批执行，清理磁盘后可从上一批断点继续
+- 全场景暂停 / 继续：主界面、批量队列、快速解压与压缩窗口均可暂停 / 继续，压缩时挂起 / 恢复 7z 子进程
+- 启动恢复提示：检测到上次未完成的解压任务时，左下角弹出一键继续
 - 全局滚轮平滑滚动，悬浮叠加式细滚动条（不占用内容宽度），悬停 / 拖动时加深高亮
 - 归档内文件查看、解压与压缩流程封装（`Engine` / `ArchiveEditor`）
 - 资源管理器右键菜单集成（`ContextMenuIntegration`）
@@ -41,6 +45,8 @@ dotnet publish NovaZip.csproj -c Release -r win-x64 --self-contained true -p:Pub
 | `Themes\` | 浅色 / 深色配色与主题资源字典 |
 | `MainWindow.xaml(.cs)` | 主窗口 |
 | `QuickExtractWindow.xaml(.cs)` | 快速解压窗口 |
+| `ExtractCoordinator.cs` | 解压协调器：分段、断点续传与暂停继续调度 |
+| `ResumeTest.cs` | 断点续传与恢复流程自检 |
 | `SmoothScroller.cs` | 全局滚轮平滑滚动 |
 | `UpdateService.cs` | GitHub Releases 更新检查与校验安装 |
 
