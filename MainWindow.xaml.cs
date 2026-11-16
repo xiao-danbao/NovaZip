@@ -169,8 +169,8 @@ namespace NovaZip
 
                 RestoreTitleText.Text = "检测到未完成的解压任务";
                 RestoreDetailText.Text = pending.Count == 1
-                    ? "「" + Path.GetFileName(pending[0]) + "」上次中断，可从断点继续"
-                    : "共 " + pending.Count + " 个任务未完成，可从断点继续";
+                    ? "「" + Path.GetFileName(pending[0]) + "」上次中断，可从断点继续（实验性功能，不一定生效）"
+                    : "共 " + pending.Count + " 个任务未完成，可从断点继续（实验性功能，不一定生效）";
                 RestoreBanner.Tag = pending;
                 RestoreBanner.Visibility = Visibility.Visible;
             }

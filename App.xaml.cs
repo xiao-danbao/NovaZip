@@ -7,14 +7,12 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
-using Microsoft.Win32;
 using NovaZip.Engine;
 
 namespace NovaZip
 {
     public partial class App : Application
     {
-        private const string VersionKeyPath = @"Software\NovaZip";
         private const string SingleInstanceName = @"Local\NovaZip.SingleInstance";
 
         private Mutex? _instanceMutex;
@@ -75,13 +73,6 @@ namespace NovaZip
                 worker.Start();
                 worker.Join();
                 Shutdown(code);
-                return;
-            }
-
-            // 一台电脑存在多个版本时，一律使用最新版本
-            if (RedirectToNewerVersion(e.Args))
-            {
-                Shutdown(0);
                 return;
             }
 
@@ -194,63 +185,6 @@ namespace NovaZip
         private static bool IsPrimaryLaunch(string[] args) =>
             args.All(a => string.Equals(a, "--open", StringComparison.OrdinalIgnoreCase) ||
                           !a.StartsWith("--", StringComparison.Ordinal));
-
-        private static Version CurrentVersion =>
-            Assembly.GetExecutingAssembly().GetName().Version ?? new Version(1, 0);
-
-        /// <summary>
-        /// 一台电脑存在多个版本时，只允许最新版本运行：转发启动参数给更新的版本后退出。
-        /// </summary>
-        private static bool RedirectToNewerVersion(string[] args)
-        {
-            var currentPath = Environment.ProcessPath ?? "";
-            var currentVersion = CurrentVersion;
-
-            try
-            {
-                using var key = Registry.CurrentUser.OpenSubKey(VersionKeyPath);
-                var latestPath = key?.GetValue("LatestPath") as string;
-
-                if (!string.IsNullOrEmpty(latestPath) &&
-                    File.Exists(latestPath) &&
-                    !string.Equals(Path.GetFullPath(latestPath), Path.GetFullPath(currentPath), StringComparison.OrdinalIgnoreCase))
-                {
-                    var info = FileVersionInfo.GetVersionInfo(latestPath);
-                    if (Version.TryParse(info.FileVersion, out var latest) && latest > currentVersion)
-                    {
-                        Process.Start(new ProcessStartInfo(latestPath, BuildArgumentLine(args))
-                        {
-                            UseShellExecute = true
-                        });
-                        return true;
-                    }
-                }
-            }
-            catch
-            {
-                // 检测失败时按当前版本继续运行
-            }
-
-            RememberCurrentVersion(currentPath, currentVersion);
-            return false;
-        }
-
-        private static void RememberCurrentVersion(string path, Version version)
-        {
-            try
-            {
-                using var key = Registry.CurrentUser.CreateSubKey(VersionKeyPath);
-                key?.SetValue("LatestPath", path);
-                key?.SetValue("LatestVersion", version.ToString());
-            }
-            catch
-            {
-                // 无权限时忽略
-            }
-        }
-
-        private static string BuildArgumentLine(string[] args) =>
-            string.Join(" ", args.Select(a => a.Contains(' ') ? "\"" + a + "\"" : a));
 
         /// <summary>
         /// 激活已在运行的 NovaZip 主窗口。

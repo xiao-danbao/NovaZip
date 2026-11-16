@@ -1251,6 +1251,18 @@
                     <TextBlock FontSize="10.5" Foreground="{DynamicResource TextFaintBrush}" TextWrapping="Wrap"
                                LineHeight="17"
                                Text="· 断点续传：解压中断自动保存进度，再次解压自动从断点继续，超大文件按字节级续写&#x0a;· 智能分段解压：磁盘空间不足时自动分批解压（每批上限为可用空间的 80%），清理磁盘后点「继续」接着解压&#x0a;· 全场景暂停/继续：主界面进度卡、批量队列、右键快速解压/压缩窗口均可随时暂停再继续&#x0a;· 启动恢复提示：检测到上次未完成的任务，左下角弹出一键继续&#x0a;· 任务面板：中断任务显示「继续」按钮，底部可一键清理断点数据；进度记录完成即删、中断保留" />
+
+                    <Border Margin="0,10,0,0" Padding="12,10" CornerRadius="10"
+                            Background="{DynamicResource WarnSoftBgBrush}"
+                            BorderBrush="{DynamicResource WarnSoftBorderBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock Text="实验性功能提示" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource WarnBrush}" />
+                            <TextBlock FontSize="10.5" Foreground="{DynamicResource TextFaintBrush}" TextWrapping="Wrap"
+                                       LineHeight="17" Margin="0,4,0,0"
+                                       Text="断点续传、智能分段解压、暂停/继续与启动恢复属于本次新增的实验性功能，在不同压缩格式、磁盘与系统环境下不一定稳定生效；如遇异常，请重新完整解压，并可在任务面板底部「清理断点」后重试。" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
                 </ScrollViewer>
             </Border>
