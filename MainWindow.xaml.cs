@@ -152,19 +152,23 @@ namespace NovaZip
             }
 
             UpdateQueueBadge();
-            ShowRestoreBannerIfAny();
+            await ShowRestoreBannerIfAnyAsync();
             CheckUpdatesOnStartup();
         }
 
         /// <summary>启动时检查上次未完成的解压任务（队列快照 + 全部断点记录）并弹出恢复提示。</summary>
-        private void ShowRestoreBannerIfAny()
+        private async Task ShowRestoreBannerIfAnyAsync()
         {
             try
             {
-                var pending = ExtractCoordinator.LoadQueueSnapshot();
-                pending.AddRange(ExtractCoordinator.LoadInterruptedRecords()
-                    .Select(r => r.Archive));
-                pending = pending.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                // 进度目录扫描要读多个 JSON，放到线程池，避免阻塞首帧与启动动画
+                var pending = await Task.Run(() =>
+                {
+                    var list = ExtractCoordinator.LoadQueueSnapshot();
+                    list.AddRange(ExtractCoordinator.LoadInterruptedRecords()
+                        .Select(r => r.Archive));
+                    return list.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                });
                 if (pending.Count == 0) return;
 
                 RestoreTitleText.Text = "检测到未完成的解压任务";
@@ -544,7 +548,7 @@ namespace NovaZip
 
                 _session?.Dispose();
                 _session = session;
-                BindArchive(session);
+                await BindArchiveAsync(session);
                 await SwitchToArchiveStateAsync();
                 ShowToast("已载入 " + Path.GetFileName(session.FilePath) + " · " + session.Entries.Count + " 个项目", ToastKind.Success);
             }
@@ -554,7 +558,7 @@ namespace NovaZip
             }
         }
 
-        private void BindArchive(ArchiveSession session)
+        private async Task BindArchiveAsync(ArchiveSession session)
         {
             ArchiveNameText.Text = Path.GetFileName(session.FilePath);
             ArchiveNameText.ToolTip = session.FilePath;
@@ -575,8 +579,15 @@ namespace NovaZip
             StatusPathText.Text = session.FilePath;
 
             _allRows.Clear();
-            for (var i = 0; i < session.Entries.Count; i++)
+
+            // 大压缩包分片填充：每 800 条让出一次 UI 线程，10 万级条目时窗口仍可重绘与响应
+            var total = session.Entries.Count;
+            for (var i = 0; i < total; i++)
+            {
                 _allRows.Add(EntryRow.Create(session.Entries[i], (uint)i));
+                if (total > 2000 && (i + 1) % 800 == 0)
+                    await Dispatcher.Yield(DispatcherPriority.Background);
+            }
 
             ApplyFilter();
             SearchBox.Text = "";
@@ -1262,7 +1273,7 @@ namespace NovaZip
                 var session = await Task.Run(() => SevenZipEngine.Open(path, password));
                 _session?.Dispose();
                 _session = session;
-                BindArchive(session);
+                await BindArchiveAsync(session);
 
                 if (ArchiveState.Visibility != Visibility.Visible)
                     await SwitchToArchiveStateAsync();

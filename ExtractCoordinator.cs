@@ -65,6 +65,12 @@ namespace NovaZip
         /// <summary>继续下一批前要求的最小可用预算，避免刚清出的空间不够写一个块就再次暂停。</summary>
         private const long MinBatchBudget = 64L * 1024 * 1024;
 
+        /// <summary>
+        /// 可用空间低于 MinBatchBudget 但仍能写下一小块时，不再一律暂停：
+        /// 按可用空间给最小批次继续推进，只有低于该下限才暂停等待清理。
+        /// </summary>
+        private const long MinDiskSliver = 8L * 1024 * 1024;
+
         private static readonly string ProgressDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NovaZip", "progress");
 
@@ -96,6 +102,9 @@ namespace NovaZip
 
         /// <summary>磁盘分批暂停时触发（后台线程），供 UI 提示清理磁盘后继续。</summary>
         public event Action? DiskPaused;
+
+        /// <summary>最近一次磁盘暂停的原因，供界面展示具体数值（为空时用通用文案）。</summary>
+        public string LastDiskPauseReason { get; private set; } = "";
 
         private ExtractCoordinator(string archivePath, ExtractRecord? record)
         {
@@ -289,9 +298,10 @@ namespace NovaZip
         }
 
         /// <summary>磁盘空间不足：保存进度、通知 UI 并阻塞等待继续；返回 true 表示已取消。</summary>
-        private bool DiskPauseAndWait(CancellationToken token)
+        private bool DiskPauseAndWait(CancellationToken token, string reason = "")
         {
             SaveProgress(force: true);
+            LastDiskPauseReason = reason;
             _resumeRequested = false;
             _resumeGate.Reset();
             DiskPaused?.Invoke();
@@ -351,16 +361,26 @@ namespace NovaZip
                     : long.MaxValue;
 
                 // 真实磁盘可用空间不足下限时暂停等待；强制预算（测试）跳过该闸门，
-                // 由批次写满预算后的中止路径负责暂停
+                // 由批次写满预算后的中止路径负责暂停。
+                // 介于「最小块」与「64MB 批次」之间时不再空等：按可用空间给一个小批次继续推进。
                 if (diskBatching && ForceBudgetBytes <= 0 && budget < MinBatchBudget)
                 {
-                    if (DiskPauseAndWait(token))
+                    if (budget < MinDiskSliver)
                     {
-                        result.Cancelled = true;
-                        result.Message = "操作已取消。";
-                        return result;
+                        var freeMb = budget == long.MaxValue ? -1 : Math.Max(0, budget * 100 / 80) / (1024 * 1024);
+                        var reason = freeMb >= 0
+                            ? "磁盘可用空间仅剩约 " + freeMb + " MB，已暂停；清理磁盘后点「继续」即可接着解压"
+                            : "磁盘可用空间不足，已暂停；清理磁盘后点「继续」即可接着解压";
+                        if (DiskPauseAndWait(token, reason))
+                        {
+                            result.Cancelled = true;
+                            result.Message = "操作已取消。";
+                            return result;
+                        }
+                        continue;
                     }
-                    continue;
+
+                    budget = Math.Max(budget, MinDiskSliver);
                 }
 
                 var batch = BuildBatch(remaining, budget, out var giantResume);
@@ -391,7 +411,8 @@ namespace NovaZip
                 {
                     // 磁盘分批中止：记录大文件已写字节，暂停等待用户清理磁盘后继续
                     CapturePartialState();
-                    if (DiskPauseAndWait(token))
+                    if (DiskPauseAndWait(token,
+                            "本批已写满磁盘可用空间，已暂停并保留已写部分；清理磁盘后点「继续」即可从断点续写"))
                     {
                         result.Cancelled = true;
                         result.Message = "操作已取消。";

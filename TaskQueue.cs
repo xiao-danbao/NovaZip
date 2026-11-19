@@ -310,7 +310,10 @@ namespace NovaZip
                 void OnDiskPaused()
                 {
                     diskPaused = true;
-                    item.Detail = "磁盘空间不足 · 请清理磁盘后点「继续」";
+                    var reason = coordinator.LastDiskPauseReason;
+                    item.Detail = string.IsNullOrEmpty(reason)
+                        ? "磁盘空间不足 · 请清理磁盘后点「继续」"
+                        : reason;
                     Pause();
                 }
 

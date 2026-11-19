@@ -11,6 +11,8 @@
 - 智能分段解压：目标盘空间不足时按可用空间分批执行，清理磁盘后可从上一批断点继续
 - 全场景暂停 / 继续：主界面、批量队列、快速解压与压缩窗口均可暂停 / 继续，压缩时挂起 / 恢复 7z 子进程
 - 启动恢复提示：检测到上次未完成的解压任务时，左下角弹出一键继续
+- 冷启动优化：右键菜单自检与断点记录扫描改为后台执行，首帧显示更快
+- 大包打开优化：万级条目列表分片填充，打开超大压缩包时窗口保持响应
 - 全局滚轮平滑滚动，悬浮叠加式细滚动条（不占用内容宽度），悬停 / 拖动时加深高亮
 - 归档内文件查看、解压与压缩流程封装（`Engine` / `ArchiveEditor`）
 - 资源管理器右键菜单集成（`ContextMenuIntegration`）
@@ -33,7 +35,7 @@ dotnet publish NovaZip.csproj -c Release -r win-x64 --self-contained true -p:Pub
 
 ## 下载与安装
 
-预编译的 Windows x64 安装包与 SHA-256 校验文件见 [Releases](https://github.com/xiao-danbao/NovaZip/releases)。
+预编译的 Windows x64 安装包见 [Releases](https://github.com/xiao-danbao/NovaZip/releases)，安装包的 SHA-256 校验值写在各版本的 Release 说明中。
 
 ## 目录结构
 

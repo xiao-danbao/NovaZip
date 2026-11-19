@@ -112,9 +112,20 @@ namespace NovaZip
                 return;
             }
 
-            // 每次启动自检：已启用右键菜单时把菜单重新指向当前 exe，避免移动程序后菜单失效
-            if (ContextMenuIntegration.IsEnabled())
-                ContextMenuIntegration.Enable(out _);
+            // 每次启动自检：已启用右键菜单时把菜单重新指向当前 exe，避免移动程序后菜单失效。
+            // 注册表读写放到线程池，避免每次冷启动都为它等待磁盘/注册表，拖慢首帧显示。
+            ThreadPool.QueueUserWorkItem(state =>
+            {
+                try
+                {
+                    if (ContextMenuIntegration.IsEnabled())
+                        ContextMenuIntegration.Enable(out _);
+                }
+                catch
+                {
+                    // 权限不足或注册表被占用时忽略，不影响主程序启动
+                }
+            });
 
             // 资源管理器右键解压：使用独立的进度窗口
             var extractHere = OptionIndex(e.Args, "--extract-here");
