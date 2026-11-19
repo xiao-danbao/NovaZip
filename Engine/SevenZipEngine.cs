@@ -151,16 +151,10 @@ namespace NovaZip.Engine
             {
                 if (_initialized) return;
 
-                var candidates = new[]
-                {
-                    Path.Combine(AppContext.BaseDirectory, "7z.dll"),
-                    Path.Combine(AppContext.BaseDirectory, "runtime", "7z.dll"),
-                    @"C:\Program Files\7-Zip\7z.dll"
-                };
-
-                _dllPath = candidates.FirstOrDefault(File.Exists);
+                // 内核定位统一交给 KernelResources：优先程序目录旁的 runtime，缺失时从内嵌资源自恢复
+                _dllPath = KernelResources.DllPath;
                 if (_dllPath == null)
-                    throw new FileNotFoundException("未找到 7z.dll 内核文件，请确认程序目录完整。");
+                    throw new FileNotFoundException("未找到 7z.dll 内核文件（程序目录与内置内核均不可用）。");
 
                 var module = Native.LoadLibraryW(_dllPath);
                 if (module == IntPtr.Zero)

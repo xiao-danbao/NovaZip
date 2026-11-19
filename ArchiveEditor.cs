@@ -10,16 +10,10 @@ namespace NovaZip
     /// <summary>调用随程序分发的 7z.exe 完成压缩包内编辑（追加 / 删除 / 重命名）。</summary>
     internal static class ArchiveEditor
     {
+        /// <summary>7z.exe 路径：统一走 KernelResources（程序目录缺失时使用内嵌内核缓存）。</summary>
         public static string? Find7z()
         {
-            var candidates = new[]
-            {
-                Path.Combine(AppContext.BaseDirectory, "7z.exe"),
-                Path.Combine(AppContext.BaseDirectory, "runtime", "7z.exe"),
-                @"C:\Program Files\7-Zip\7z.exe"
-            };
-
-            return candidates.FirstOrDefault(File.Exists);
+            return KernelResources.ExePath;
         }
 
         public static (bool Ok, string Message) Add(string archive, IReadOnlyList<string> files, string password)

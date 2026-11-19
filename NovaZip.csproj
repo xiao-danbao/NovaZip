@@ -10,9 +10,9 @@
     <RootNamespace>NovaZip</RootNamespace>
     <Product>NovaZip 现代解压</Product>
     <Description>基于 7-Zip 26.06 内核的现代化压缩/解压工具</Description>
-    <Version>1.4.6</Version>
-    <AssemblyVersion>1.4.6.0</AssemblyVersion>
-    <FileVersion>1.4.6.0</FileVersion>
+    <Version>1.4.7</Version>
+    <AssemblyVersion>1.4.7.0</AssemblyVersion>
+    <FileVersion>1.4.7.0</FileVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
@@ -32,6 +32,19 @@
     <None Update="runtime\7-Zip-License.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <!-- 内核同时内嵌进 EXE：应用内更新只替换 exe 时仍能自恢复，无需依赖 runtime 目录 -->
+  <ItemGroup>
+    <EmbeddedResource Include="runtime\7z.dll">
+      <LogicalName>NovaZip.runtime.7z.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="runtime\7z.exe">
+      <LogicalName>NovaZip.runtime.7z.exe</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="runtime\7-Zip-License.txt">
+      <LogicalName>NovaZip.runtime.7-Zip-License.txt</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

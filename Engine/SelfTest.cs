@@ -45,9 +45,9 @@ namespace NovaZip.Engine
                 SevenZipEngine.Trace = Flush;
                 Info("NovaZip engine self-test @ " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
                 Info("Step 1: load 7z.dll");
-                Info("7z.dll: " + SevenZipEngine.DllPath);
                 Info("Formats: " + SevenZipEngine.Formats.Count + " -> " +
                      string.Join(", ", SevenZipEngine.Formats.Take(12).Select(f => f.Name)));
+                Info("7z.dll: " + SevenZipEngine.DllPath + " [" + KernelResources.SourceText + "]");
 
                 var root = Path.Combine(Path.GetTempPath(), "novazip-selftest-" + Guid.NewGuid().ToString("N"));
                 var srcDir = Path.Combine(root, "src");
@@ -77,7 +77,7 @@ namespace NovaZip.Engine
                 else
                 {
                     Fail("Create .7z - " + create.Message);
-                    var sevenZipExe = Path.Combine(AppContext.BaseDirectory, "runtime", "7z.exe");
+                    var sevenZipExe = ArchiveEditor.Find7z();
                     if (File.Exists(sevenZipExe))
                     {
                         var psi = new ProcessStartInfo(sevenZipExe, "a \"" + archive7z + "\" \"" + srcDir + "\" -mx5")
